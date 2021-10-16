@@ -1,105 +1,105 @@
-#include <assert.h>
 #include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
 #include <uv.h>
 
-void on_read(uv_fs_t *req);
+#define DEFAULT_PORT 7000
+#define DEFAULT_BACKLOG 128
 
-uv_fs_t open_req;
-uv_fs_t read_req;
-uv_fs_t write_req;
+uv_loop_t *loop;
+struct sockaddr_in addr;
 
-static char buffer[1024];
-
-static uv_buf_t iov;
-
-void runCPlayground()
+typedef struct
 {
-    /* Definning a new type from struct */
-    struct Employee
-    {
-        int nr;
-        int years;
-        char name[20];
-        double salary;
-    };
-    typedef struct Employee Employee;
+    uv_write_t req;
+    uv_buf_t buf;
+} write_req_t;
 
-    /* Variable definition/declaration */
-    Employee e1 = {1, 2, "Ramy", 1200.00};
-    Employee e2;
-
-    /* Fill some data about employees in another way */
-    e2.nr = 2;
-    e2.years = 3;
-    strncpy(e2.name, "Thomas", 20);
-    e2.salary = 1300.50;
-
-    printf("Employee 1 is %s and gets a monthly salary of %.2f\n", e1.name, e1.salary);
-    printf("Employee 2 is %s and gets a monthly salary of %.2f\n", e2.name, e2.salary);
-
-    struct Employee e3 = {3, 5, "Bill", 1900.50};
+void free_write_req(uv_write_t *req)
+{
+    write_req_t *wr = (write_req_t *)req;
+    free(wr->buf.base);
+    free(wr);
 }
 
-void on_write(uv_fs_t *req)
+void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf)
 {
-    if (req->result < 0)
+    buf->base = (char *)malloc(suggested_size);
+    buf->len = suggested_size;
+}
+
+void on_close(uv_handle_t *handle)
+{
+    free(handle);
+}
+
+void echo_write(uv_write_t *req, int status)
+{
+    if (status)
     {
-        fprintf(stderr, "Write error: %s\n", uv_strerror((int)req->result));
+        fprintf(stderr, "Write error %s\n", uv_strerror(status));
+    }
+    free_write_req(req);
+}
+
+void echo_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
+{
+    if (nread > 0)
+    {
+        write_req_t *req = (write_req_t *)malloc(sizeof(write_req_t));
+        req->buf = uv_buf_init(buf->base, nread);
+        uv_write((uv_write_t *)req, client, &req->buf, 1, echo_write);
+        return;
+    }
+    if (nread < 0)
+    {
+        if (nread != UV_EOF)
+            fprintf(stderr, "Read error %s\n", uv_err_name(nread));
+        uv_close((uv_handle_t *)client, on_close);
+    }
+
+    free(buf->base);
+}
+
+void on_new_connection(uv_stream_t *server, int status)
+{
+    if (status < 0)
+    {
+        fprintf(stderr, "New connection error %s\n", uv_strerror(status));
+        // error!
+        return;
+    }
+
+    uv_tcp_t *client = (uv_tcp_t *)malloc(sizeof(uv_tcp_t));
+    uv_tcp_init(loop, client);
+    if (uv_accept(server, (uv_stream_t *)client) == 0)
+    {
+        uv_read_start((uv_stream_t *)client, alloc_buffer, echo_read);
+        printf("connection accepted\n");
     }
     else
     {
-        uv_fs_read(uv_default_loop(), &read_req, open_req.result, &iov, 1, -1, on_read);
+        uv_close((uv_handle_t *)client, on_close);
     }
 }
 
-void on_read(uv_fs_t *req)
+int main()
 {
-    if (req->result < 0)
-    {
-        fprintf(stderr, "Read error: %s\n", uv_strerror(req->result));
-    }
-    else if (req->result == 0)
-    {
-        uv_fs_t close_req;
-        // synchronous
-        uv_fs_close(uv_default_loop(), &close_req, open_req.result, NULL);
-    }
-    else if (req->result > 0)
-    {
-        iov.len = req->result;
-        uv_fs_write(uv_default_loop(), &write_req, 1, &iov, 1, -1, on_write);
-    }
-}
+    loop = uv_default_loop();
 
-void on_open(uv_fs_t *req)
-{
-    // The request passed to the callback is the same as the one the call setup
-    // function was passed.
-    assert(req == &open_req);
-    if (req->result >= 0)
-    {
-        iov = uv_buf_init(buffer, sizeof(buffer));
-        uv_fs_read(uv_default_loop(), &read_req, req->result,
-                   &iov, 1, -1, on_read);
-    }
-    else
-    {
-        fprintf(stderr, "error opening file: %s\n", uv_strerror((int)req->result));
-    }
-}
+    uv_tcp_t server;
+    uv_tcp_init(loop, &server);
 
-int main(int argc, char **argv)
-{
-    // The path of the file to be opened is supplied via the cli arguments to running the executable
-    // The path is captured in argv[1]
-    uv_fs_open(uv_default_loop(), &open_req, argv[1], O_RDONLY, 0, on_open);
-    uv_run(uv_default_loop(), UV_RUN_DEFAULT);
+    uv_ip4_addr("0.0.0.0", DEFAULT_PORT, &addr);
 
-    uv_fs_req_cleanup(&open_req);
-    uv_fs_req_cleanup(&read_req);
-    uv_fs_req_cleanup(&write_req);
-    return 0;
+    uv_tcp_bind(&server, (const struct sockaddr *)&addr, 0);
+
+    printf("Binding successful to port %s\n", DEFAULT_PORT);
+    int r = uv_listen((uv_stream_t *)&server, DEFAULT_BACKLOG, on_new_connection);
+    if (r)
+    {
+        fprintf(stderr, "Listen error %s\n", uv_strerror(r));
+        return 1;
+    }
+    return uv_run(loop, UV_RUN_DEFAULT);
 }
