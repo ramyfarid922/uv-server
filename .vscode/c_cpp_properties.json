@@ -4,7 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${default}",
-                "${workspaceFolder}/libuv/include"
+                "${workspaceFolder}/libuv/include",
+                "${workspaceFolder}"
             ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "gnu17",
