@@ -3,6 +3,7 @@
 #include <string.h>
 #include <uv.h>
 
+/* global counter defined */
 int64_t counter = 0;
 
 void runCPlayground()
@@ -35,8 +36,12 @@ void runCPlayground()
 
 void wait_for_a_while(uv_idle_t *handle)
 {
+    // This function is a callback to an event, in the libuv C world
+    // It just increments a global counter on each invokation
     counter++;
 
+    // If this function ran 10e6
+    // Just remove the registered idle handle
     if (counter >= 10e6)
         uv_idle_stop(handle);
 }
@@ -45,6 +50,7 @@ int main(int argc, char **argv)
 {
     uv_idle_t idler;
 
+    /* Registering an idle uv handle */
     uv_idle_init(uv_default_loop(), &idler);
     uv_idle_start(&idler, wait_for_a_while);
 
