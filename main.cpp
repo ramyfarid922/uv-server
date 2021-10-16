@@ -1,17 +1,16 @@
-#include <iostream>
-#include <vector>
-#include <string>
-
-using namespace std;
+#include <stdio.h>
+#include <stdlib.h>
+#include <uv.h>
 
 int main()
 {
-    vector<string> msg{"Hello", "C++", "World", "from", "VS Code", "and the C++ extension!"};
+    uv_loop_t *loop = malloc(sizeof(uv_loop_t));
+    uv_loop_init(loop);
 
-    for (const string &word : msg)
-    {
-        cout << word << " ";
-    }
-    cout << endl;
+    printf("Now quitting.\n");
+    uv_run(loop, UV_RUN_DEFAULT);
+
+    uv_loop_close(loop);
+    free(loop);
     return 0;
 }
