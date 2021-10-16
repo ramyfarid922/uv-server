@@ -94,12 +94,12 @@ int main()
 
     uv_tcp_bind(&server, (const struct sockaddr *)&addr, 0);
 
-    printf("Binding successful to port %s\n", DEFAULT_PORT);
     int r = uv_listen((uv_stream_t *)&server, DEFAULT_BACKLOG, on_new_connection);
     if (r)
     {
         fprintf(stderr, "Listen error %s\n", uv_strerror(r));
         return 1;
     }
+    printf("Binding successful to port 7000\n");
     return uv_run(loop, UV_RUN_DEFAULT);
 }
